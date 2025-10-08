@@ -1,0 +1,316 @@
+---
+title: "Re-evaluating Growth in the Time of Debt"
+subtitle: "[DSLC stages]: Data cleaning and pre-processing"
+format: 
+  html:
+    css: theme.css
+    toc: true
+    toc-location: right
+    number-depth: 4
+    theme: cerulean
+    df-print: kable
+execute:
+  echo: true
+editor: source
+number-sections: true
+embed-resources: true
+editor_options: 
+  chunk_output_type: console
+---
+
+
+## Domain problem formulation
+
+
+## Data source overview
+
+## Step 1: Review background information {#sec-bg-info}
+
+Based on the things on the website of "Historical public depth data set":
+The historical public debt database is the first truly comprehensive database on gross government debt-to-GDP produced and maintained by the Fiscal Department at the IMF. It provides a public good to macro practitioners by publishing electronically the database and being transparent about the data sources and references.
+
+GDP stands for Gross Domestic Product. It is the total monetary value of all goods and services produced within a country’s borders in a specific time period (usually a year or a quarter).
+
+In simpler terms, GDP measures the economic activity and size of a country’s economy. A higher GDP generally means a larger or more productive economy.
+In Gdp data set we have the growth rate which is:
+$$\frac{\textbf{GDP of current year}-\textbf{GDP of last year}}{GDP of last year}\times 100$$
+And the unit for debt is usually expressed as trillions of the currency of that contry of we can transform it to USD for a more consistent data set. 
+Sometimes it is shown as debt to GDP ratio which makes more sound here because the debt of united states in 2015 was 18.7\$ trillion of dollar and debt to GDP ratio was 105% which is the number that is displayed in the data set.
+### Data dictionary
+
+
+## Step 2: Loading in the data
+
+```{r}
+
+library(readr)
+
+growth_raw <- read_csv(
+  "E:/growth_original.csv",
+  skip = 0,               # skip metadata rows if any
+  col_types = cols(.default = col_double(), 
+                   `Country Name` = col_character(),
+                   `Country Code` = col_character(),
+                   `Indicator Name` = col_character(),
+                   `Indicator Code` = col_character()),
+  na = c("", "NA")
+)
+
+head(growth_raw)
+library(readr)
+
+debt_raw <- read_csv(
+  "E:/debt_original.csv",
+  skip = 0,               # skip metadata rows if any
+  na = c("", "NA")
+)
+
+head(debt_raw, 50)
+
+
+head(debt_raw)
+
+```
+
+```{r}
+colnames(debt_raw)
+```
+
+```{r}
+colnames(growth_raw)
+```
+
+```{r}
+dim(debt_raw)
+dim(growth_raw)
+```
+As you see there are more countries as it should be:
+```{r}
+library(dplyr)
+
+growth_raw |> 
+  summarise(num_countries = n_distinct(`Country Name`))
+
+```
+but the debt data set only shows exact number of countries. 
+```{r}
+debt_raw |> 
+  summarise(num_countries = n_distinct(`DEBT (% of GDP)`))
+
+```
+## Step 3: Examine the data and create action items
+```{r}
+library(purrr)
+
+#| label: tbl-summary
+#| tbl-cap: The minimum, mean, and maximum of each numeric variable
+growth_raw |> 
+  select(where(is.numeric)) |> 
+  map_df(function(.col) { data.frame(min = min(.col, na.rm = TRUE),
+                                     mean = mean(.col, na.rm = TRUE),
+                                     max = max(.col, na.rm = TRUE)) },
+         .id = "variable")
+
+```
+This shows that the data in debt data set is not recorded as numeric. so we need to change it.
+```{r}
+
+debt_raw <- debt_raw %>%
+  mutate(across(-1, as.numeric))
+
+#| label: tbl-summary
+#| tbl-cap: The minimum, mean, and maximum of each numeric variable
+debt_raw |> 
+  select(where(is.numeric)) |> 
+  map_df(function(.col) { data.frame(min = min(.col, na.rm = TRUE),
+                                     mean = mean(.col, na.rm = TRUE),
+                                     max = max(.col, na.rm = TRUE)) },
+         .id = "variable")
+
+```
+
+```{r}
+library(tidyr)
+
+#| label: tbl-missing-cols
+#| tbl-cap: "The number of missing rows in each column"
+#| warning: false
+#| message: false
+growth_raw |> 
+  summarise(across(everything(), ~sum(is.na(.)))) |>
+  pivot_longer(everything(), names_to = "variable", values_to = "missing_rows") |>
+  mutate(prop_missing = missing_rows / nrow(growth_raw)) |>
+  arrange(missing_rows)
+
+```
+There are many missing data in the debt data set specially in the intial years.
+```{r}
+
+debt_raw |> 
+  summarise(across(everything(), ~sum(is.na(.)))) |>
+  pivot_longer(everything(), names_to = "variable", values_to = "missing_rows") |>
+  mutate(prop_missing = missing_rows / nrow(debt_raw)) |>
+  arrange(missing_rows)
+
+```
+
+```{r}
+library(naniar)
+library(ggplot2)
+
+vis_miss(debt_raw) + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+vis_miss(growth_raw) + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+```
+### Finding invalid values
+
+
+### Assessing Column names
+Column names were already pretty human friendly but we try to make it better:
+```{r}
+library(janitor)
+
+growth_raw <- growth_raw |> clean_names()
+debt_raw   <- debt_raw   |> clean_names()
+colnames(growth_raw)
+colnames(debt_raw)
+```
+I think this command make the data set less understandable. 
+
+
+### Assessing variable type
+We already change the data recorded in debt_raw to numeric. 
+```{r}
+str(growth_raw)
+str(debt_raw)
+
+```
+### Assessing data completeness
+If our data set is comple every country should have the same number of rows (one per year) and we would see the same number repeated in the rows column for all countries.
+```{r}
+library(dplyr)
+library(tidyr)
+
+growth_raw |> 
+  group_by(country_name) |> 
+  summarise(rows = n()) |> 
+  arrange(rows) |> 
+  head(20)  # sample first 20 countries
+
+debt_raw |> 
+  group_by(debt_percent_of_gdp) |> 
+  summarise(rows = n()) |> 
+  arrange(rows) |> 
+  head(20)
+
+```
+
+but as we saw in the previous part the number of row in growth rate is 266 which is higher than 194.
+If we just check for one country to see how many rows we get might give us some information. 
+```{r}
+growth_raw |> 
+  filter(country_name == "United States")  
+
+```
+
+```{r}
+library(dplyr)
+
+growth_raw |> 
+  group_by(country_name) |> 
+  summarise(n_rows = n()) |> 
+  filter(n_rows > 1) |>  
+  arrange(desc(n_rows))
+
+```
+This means that no country appears more than once in growth_raw when grouped by country alone.
+but there are some rows such as follows which is not a country:
+```{r}
+growth_raw |> 
+  filter(country_name == "East Asia & Pacific")  
+
+```
+## Step 4: Clean and pre-process the data
+```{r}
+library(dplyr)
+library(tidyr)
+library(janitor)
+
+clean_debt <- function(df) {
+  df |> 
+    janitor::clean_names() |> 
+    pivot_longer(
+      cols = -debt_percent_of_gdp,
+      names_to = "year",
+      values_to = "debt_percent_gdp"
+    ) |> 
+    mutate(
+      year = as.integer(gsub("[^0-9]", "", year)),
+      debt_percent_gdp = as.numeric(debt_percent_gdp)
+    ) |>  
+    arrange(debt_percent_of_gdp, year)
+}
+
+```
+
+```{r}
+clean_growth <- function(df) {
+  df |> 
+    clean_names() |> 
+    mutate(across(-country_name, as.numeric)) |> 
+    pivot_longer(
+      cols = -country_name,
+      names_to = "year",
+      values_to = "GDP"
+    ) |> 
+    mutate(year = as.integer(gsub("[^0-9]", "", year))) |> 
+    arrange(country_name, year)
+}
+
+```
+
+```{r}
+growth_clean <- clean_growth(growth_raw)
+growth_clean[growth_clean$country_name == "Australia", ]
+```
+
+```{r}
+debt_clean <- clean_debt(debt_raw)
+
+head(debt_clean)
+
+
+
+```
+
+
+Part c)
+```{r}
+debt_clean <- debt_clean %>%
+  rename(country_name = debt_percent_of_gdp)
+
+```
+
+```{r}
+debt_clean <- debt_clean %>%
+  filter(year >= 1960 & year <= 2021)
+
+
+growth_filtered <- growth_clean %>%
+  filter(growth_clean$country_name %in% debt_clean$country_name)
+library(dplyr)
+
+growth_filtered <- growth_filtered %>%
+  filter(!is.na(year))
+library(dplyr)
+
+merged_data <- inner_join(
+  debt_clean,
+  growth_filtered,
+  by = c("country_name", "year")
+)
+merged_data[merged_data$country_name == "Australia", ]
+```
